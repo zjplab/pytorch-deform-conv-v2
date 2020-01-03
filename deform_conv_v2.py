@@ -15,6 +15,7 @@ class DeformConv2d(nn.Module):
         self.zero_padding = nn.ZeroPad2d(padding)
         self.conv = nn.Conv2d(inc, outc, kernel_size=kernel_size, stride=kernel_size, bias=bias)
 
+        #K:= kernel_size*kernel_size
         self.p_conv = nn.Conv2d(inc, 2*kernel_size*kernel_size, kernel_size=3, padding=1, stride=stride)
         nn.init.constant_(self.p_conv.weight, 0)
         self.p_conv.register_backward_hook(self._set_lr)
@@ -37,7 +38,7 @@ class DeformConv2d(nn.Module):
 
         dtype = offset.data.type()
         ks = self.kernel_size
-        N = offset.size(1) // 2
+        N = offset.size(1) // 2 # I guess N means K in the paper
 
         if self.padding:
             x = self.zero_padding(x)
@@ -89,8 +90,23 @@ class DeformConv2d(nn.Module):
         return out
 
     def _get_p_n(self, N, dtype):
+        '''
+        Example:
+        let kernel_size=3
+
+        p_n_x=tensor([[-1, -1, -1],
+                      [ 0,  0,  0],
+                      [ 1,  1,  1]])
+
+        p_n_y=tensor([[-1,  0,  1],
+                      [-1,  0,  1],
+                      [-1,  0,  1]])
+        
+        p_n(before view):
+        tensor([-1, -1, -1,  0,  0,  0,  1,  1,  1, -1,  0,  1, -1,  0,  1, -1,  0,  1])
+        '''
         p_n_x, p_n_y = torch.meshgrid(
-            torch.arange(-(self.kernel_size-1)//2, (self.kernel_size-1)//2+1),
+            torch.arange(-(self.kernel_size-1)//2, (self.kernel_size-1)//2+1), 
             torch.arange(-(self.kernel_size-1)//2, (self.kernel_size-1)//2+1))
         # (2N, 1)
         p_n = torch.cat([torch.flatten(p_n_x), torch.flatten(p_n_y)], 0)
@@ -99,12 +115,26 @@ class DeformConv2d(nn.Module):
         return p_n
 
     def _get_p_0(self, h, w, N, dtype):
+        '''
+        Example, let h=3, w=4, stride=2
+        p_0_x: 
+        tensor([[1, 1, 1, 1],
+                [3, 3, 3, 3],
+                [5, 5, 5, 5]])
+
+        p_0_y:
+        tensor([[1, 3, 5, 7],
+                [1, 3, 5, 7],
+                [1, 3, 5, 7]])
+
+        
+        '''
         p_0_x, p_0_y = torch.meshgrid(
-            torch.arange(1, h*self.stride+1, self.stride),
-            torch.arange(1, w*self.stride+1, self.stride))
-        p_0_x = torch.flatten(p_0_x).view(1, 1, h, w).repeat(1, N, 1, 1)
-        p_0_y = torch.flatten(p_0_y).view(1, 1, h, w).repeat(1, N, 1, 1)
-        p_0 = torch.cat([p_0_x, p_0_y], 1).type(dtype)
+            torch.arange(1, h*self.stride+1, self.stride), #(h,w)
+            torch.arange(1, w*self.stride+1, self.stride)) #(h,w)
+        p_0_x = torch.flatten(p_0_x).view(1, 1, h, w).repeat(1, N, 1, 1) #(1, N, h, w)
+        p_0_y = torch.flatten(p_0_y).view(1, 1, h, w).repeat(1, N, 1, 1) #(1, N, h, w)
+        p_0 = torch.cat([p_0_x, p_0_y], 1).type(dtype) # (1, 2N, h, w)
 
         return p_0
 
