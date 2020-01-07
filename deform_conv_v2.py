@@ -32,6 +32,7 @@ class DeformConv2d(nn.Module):
         grad_output = (grad_output[i] * 0.1 for i in range(len(grad_output)))
 
     def forward(self, x):
+        #guess x: (b, C, H, W)
         offset = self.p_conv(x)
         if self.modulation:
             m = torch.sigmoid(self.m_conv(x))
@@ -48,9 +49,12 @@ class DeformConv2d(nn.Module):
 
         # (b, h, w, 2N)
         p = p.contiguous().permute(0, 2, 3, 1)
+        # lt: upper left
+        # rb: bottom right 
         q_lt = p.detach().floor()
         q_rb = q_lt + 1
 
+        #(b,h,w,2N)
         q_lt = torch.cat([torch.clamp(q_lt[..., :N], 0, x.size(2)-1), torch.clamp(q_lt[..., N:], 0, x.size(3)-1)], dim=-1).long()
         q_rb = torch.cat([torch.clamp(q_rb[..., :N], 0, x.size(2)-1), torch.clamp(q_rb[..., N:], 0, x.size(3)-1)], dim=-1).long()
         q_lb = torch.cat([q_lt[..., :N], q_rb[..., N:]], dim=-1)
@@ -116,6 +120,7 @@ class DeformConv2d(nn.Module):
 
     def _get_p_0(self, h, w, N, dtype):
         '''
+        Find original reference point in x 
         Example, let h=3, w=4, stride=2
         p_0_x: 
         tensor([[1, 1, 1, 1],
